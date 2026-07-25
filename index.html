@@ -201,8 +201,6 @@ function render(data){
     ranges[vr.range] = vr.values || [];
   });
 
-  const budgetRaw = ranges['Budget!F1:AB2'] || [];
-  const catRaw = ranges['Budget!O1:P10'] || [];
   const tradingRaw = ranges['Trading!A1:I15'] || [];
   const weightRaw = ranges['wight!A1:D30'] || [];
   const metricsRaw = ranges['Metrics!A1:B13'] || [];
@@ -219,15 +217,46 @@ function render(data){
     };
   });
 
-  const b = budgetRaw[1] || [];
-  const weeklyBudget = b[0], weekStart = b[1], weeklyRemaining = b[2];
-  const monthlyTotal = b[4], totalIncome = b[5], totalExpenses = b[6];
-  const cycleEnd = b[15], currentIncome = b[22], currentExpenses = b[23], currentTotal = b[24];
+  // Weekly snapshot (live from Notion)
+  const weekPage = (data.weekly || [])[0];
+  const weekP = weekPage ? weekPage.properties : {};
+  const weeklyLimit = weekP['Weekly limit KWD'] && weekP['Weekly limit KWD'].formula ? weekP['Weekly limit KWD'].formula.number : 30;
+  const weeklySpent = weekP['Weekly spent KWD'] ? weekP['Weekly spent KWD'].number : 0;
+  const weeklyRemaining = weekP['Weekly remaining KWD'] && weekP['Weekly remaining KWD'].formula ? weekP['Weekly remaining KWD'].formula.number : (weeklyLimit - weeklySpent);
+  const weeklyPct = weeklyLimit > 0 ? Math.min(100, (weeklySpent / weeklyLimit) * 100) : 0;
 
-  const weeklySpent = (parseFloat(weeklyBudget)||0) - (parseFloat(weeklyRemaining)||0);
-  const weeklyPct = weeklyBudget > 0 ? Math.min(100, (weeklySpent/weeklyBudget)*100) : 0;
+  // Monthly / cycle snapshot (live from Notion)
+  const monthPage = (data.monthly || [])[0];
+  const monthP = monthPage ? monthPage.properties : {};
+  const cycleLabel = monthP.Month && monthP.Month.title ? monthP.Month.title.map(t => t.plain_text).join('') : '';
+  const cycleEnd = cycleLabel.includes(' to ') ? cycleLabel.split(' to ')[1] : '—';
+  const totalIncome = monthP['Total income KWD'] ? monthP['Total income KWD'].number : 0;
+  const totalSpent = monthP['Total spent KWD'] ? monthP['Total spent KWD'].number : 0;
+  const cycleNet = totalIncome - totalSpent;
 
-  const cats = (catRaw || []).filter(r => r[0] && !['Category Breakdown (Current Billing Cycle)','Cycle start','Category'].includes(r[0]));
+  // Categories: build id -> {name, limit} map
+  const catMap = {};
+  (data.categories || []).forEach(c => {
+    const cp = c.properties || {};
+    const titleArr = (cp.Name && cp.Name.title) || [];
+    catMap[c.id] = {
+      name: titleArr.map(t => t.plain_text).join('') || 'Unnamed',
+      limit: cp['Cycle limit KWD'] ? cp['Cycle limit KWD'].number : null,
+      kind: cp.Kind && cp.Kind.select ? cp.Kind.select.name : ''
+    };
+  });
+
+  // Current-cycle expense transactions, grouped by category
+  const catTotals = {};
+  (data.transactions || []).forEach(tx => {
+    const tp = tx.properties || {};
+    const amt = tp['Amount KWD'] ? tp['Amount KWD'].number : 0;
+    const catRel = (tp.Category && tp.Category.relation) || [];
+    const catId = catRel[0] ? catRel[0].id : null;
+    const key = catId && catMap[catId] ? catMap[catId].name : 'Uncategorized';
+    catTotals[key] = (catTotals[key] || 0) + amt;
+  });
+  const cats = Object.keys(catTotals).sort((a,b) => catTotals[b] - catTotals[a]).map(name => ({name, total: catTotals[name]}));
 
   const trades = rowsToObjects(tradingRaw);
 
@@ -246,12 +275,12 @@ function render(data){
 
   // BUDGET
   html += `<section>
-    <div class="section-label">Budget · cycle ends ${cycleEnd || '—'}</div>
+    <div class="section-label">Budget · cycle ends ${cycleEnd}</div>
     <div class="card">
       <div class="budget-row">
         <div>
-          <div class="big-number">${fmt(currentTotal)}</div>
-          <div class="big-label">KWD remaining this cycle</div>
+          <div class="big-number">${fmt(cycleNet)}</div>
+          <div class="big-label">KWD net this cycle</div>
         </div>
         <div class="budget-sub">
           <div class="big-number">${fmt(weeklyRemaining)}</div>
@@ -259,7 +288,7 @@ function render(data){
         </div>
       </div>
       <div class="bar-track"><div class="bar-fill" style="width:${weeklyPct}%"></div></div>
-      ${cats.map(c => `<div class="cat-row"><span class="cat-name">${c[0]}</span><span class="cat-amt">${fmt(c[1])} KWD</span></div>`).join('')}
+      ${cats.map(c => `<div class="cat-row"><span class="cat-name">${c.name}</span><span class="cat-amt">${fmt(c.total)} KWD</span></div>`).join('')}
     </div>
   </section>`;
 
