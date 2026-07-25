@@ -139,7 +139,7 @@ function rowsToObjects(values){
 
 let busy = false;
 
-async function markDone(row, btn){
+async function markDone(pageId, btn){
   if(busy) return;
   busy = true;
   if(btn) btn.textContent = '…';
@@ -147,7 +147,7 @@ async function markDone(row, btn){
     await fetch(ACTIONS_WEBHOOK, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({action: 'markTaskDone', row: row})
+      body: JSON.stringify({action: 'markTaskDone', pageId: pageId})
     });
     await load();
   } catch(e){
@@ -201,14 +201,23 @@ function render(data){
     ranges[vr.range] = vr.values || [];
   });
 
-  const tasksRaw = ranges['Tasks!A1:G20'] || [];
   const budgetRaw = ranges['Budget!F1:AB2'] || [];
   const catRaw = ranges['Budget!O1:P10'] || [];
   const tradingRaw = ranges['Trading!A1:I15'] || [];
   const weightRaw = ranges['wight!A1:D30'] || [];
   const metricsRaw = ranges['Metrics!A1:B13'] || [];
 
-  const tasks = rowsToObjects(tasksRaw).filter(t => t['Done'] !== 'TRUE' && t['Name of the task']);
+  const tasks = (data.tasks || []).map(page => {
+    const p = page.properties || {};
+    const titleArr = (p.Task && p.Task.title) || [];
+    return {
+      id: page.id,
+      title: titleArr.map(t => t.plain_text).join('') || 'Untitled',
+      type: p.Type && p.Type.select ? p.Type.select.name : '',
+      due: p.Due && p.Due.date ? p.Due.date.start : '',
+      priority: p.Priority && p.Priority.select ? p.Priority.select.name : ''
+    };
+  });
 
   const b = budgetRaw[1] || [];
   const weeklyBudget = b[0], weekStart = b[1], weeklyRemaining = b[2];
@@ -260,10 +269,10 @@ function render(data){
     <div class="card">
       ${tasks.length === 0 ? "<div class=\"empty\">Nothing open — you're clear.</div>" :
         tasks.map(t => `<div class="task-row">
-          <div class="check" onclick="markDone(${t._row}, this)"></div>
+          <div class="check" onclick="markDone('${t.id}', this)"></div>
           <div>
-            <div class="task-title">${t['Name of the task']}</div>
-            <div class="task-meta">${t['Type of the task'] || ''} · ${t['Time remaining'] || ''}</div>
+            <div class="task-title">${t.title}</div>
+            <div class="task-meta">${t.type || ''}${t.due ? ' · due ' + t.due : ''}</div>
           </div>
         </div>`).join('')}
     </div>
