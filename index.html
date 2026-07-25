@@ -66,9 +66,22 @@
   .task-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-top:1px solid var(--card-border);}
   .task-row:first-of-type{border-top:none;}
   .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);margin-top:6px;flex-shrink:0;}
+  .check{width:18px;height:18px;border-radius:6px;border:1.5px solid var(--card-border);margin-top:2px;flex-shrink:0;transition:background .15s,border-color .15s;}
+  .check:active{background:var(--gold);border-color:var(--gold);}
   .task-title{font-size:14px;line-height:1.4;}
   .task-meta{font-size:11px;color:var(--ink-dim);font-family:var(--mono);margin-top:2px;}
   .empty{color:var(--ink-dim);font-size:13px;padding:6px 0;}
+  .log-row{display:flex;gap:8px;margin-bottom:14px;}
+  .log-row input{
+    flex:1;background:#0E1412;border:1px solid var(--card-border);border-radius:8px;
+    color:var(--ink);font-family:var(--mono);font-size:14px;padding:9px 10px;min-width:0;
+  }
+  .log-row input::placeholder{color:var(--ink-dim);}
+  .log-btn{
+    background:var(--gold);color:#0A0E0C;border:none;border-radius:8px;
+    padding:9px 16px;font-size:13px;font-weight:600;font-family:var(--sans);
+  }
+  .log-btn:active{opacity:0.8;}
 
   /* Trading */
   .pnl-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
@@ -99,6 +112,7 @@
 
 <script>
 const WEBHOOK = "https://hook.us2.make.com/m7mi6siquksmx34xcyfbril3k1kxt4r8";
+const ACTIONS_WEBHOOK = "https://hook.us2.make.com/q3y8gbs3lqmnp6qgxmlnquxni4qbjsoc";
 
 // Fix double-encoded UTF-8 (Arabic text coming through as mojibake)
 function fixEncoding(str){
@@ -115,11 +129,57 @@ function fmt(n){
 function rowsToObjects(values){
   if(!values || values.length < 2) return [];
   const headers = values[0];
-  return values.slice(1).filter(r => r.some(c => c !== "")).map(r => {
+  return values.slice(1).filter(r => r.some(c => c !== "")).map((r, i) => {
     const o = {};
-    headers.forEach((h,i) => o[h] = fixEncoding(r[i] || ""));
+    headers.forEach((h,idx) => o[h] = fixEncoding(r[idx] || ""));
+    o._row = i + 2; // sheet row number (row 1 = header)
     return o;
   });
+}
+
+let busy = false;
+
+async function markDone(row, btn){
+  if(busy) return;
+  busy = true;
+  if(btn) btn.textContent = '…';
+  try {
+    await fetch(ACTIONS_WEBHOOK, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'markTaskDone', row: row})
+    });
+    await load();
+  } catch(e){
+    if(btn) btn.textContent = '!';
+  } finally {
+    busy = false;
+  }
+}
+
+async function logWeight(){
+  if(busy) return;
+  const input = document.getElementById('weightInput');
+  const val = parseFloat(input.value);
+  if(!val) return;
+  busy = true;
+  const btn = document.getElementById('logWeightBtn');
+  const original = btn.textContent;
+  btn.textContent = '…';
+  try {
+    await fetch(ACTIONS_WEBHOOK, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'logWeight', weight: val})
+    });
+    input.value = '';
+    await load();
+  } catch(e){
+    btn.textContent = '!';
+  } finally {
+    busy = false;
+    if(btn.textContent === '…') btn.textContent = original;
+  }
 }
 
 async function load(){
@@ -200,7 +260,7 @@ function render(data){
     <div class="card">
       ${tasks.length === 0 ? "<div class=\"empty\">Nothing open — you're clear.</div>" :
         tasks.map(t => `<div class="task-row">
-          <div class="dot"></div>
+          <div class="check" onclick="markDone(${t._row}, this)"></div>
           <div>
             <div class="task-title">${t['Name of the task']}</div>
             <div class="task-meta">${t['Type of the task'] || ''} · ${t['Time remaining'] || ''}</div>
@@ -255,6 +315,10 @@ function render(data){
   html += `<section>
     <div class="section-label">Weight</div>
     <div class="card">
+      <div class="log-row">
+        <input type="number" step="0.1" inputmode="decimal" id="weightInput" placeholder="log today's weight">
+        <button id="logWeightBtn" class="log-btn" onclick="logWeight()">Log</button>
+      </div>
       ${!latestWeight ? '<div class="empty">No entries logged.</div>' : `
       <div class="budget-row">
         <div>
