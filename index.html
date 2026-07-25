@@ -134,7 +134,6 @@ async function load(){
 function render(data){
   const ranges = {};
   (data.valueRanges || []).forEach(vr => {
-    const key = vr.range.split('!')[0] + '|' + vr.range.split('!')[1];
     ranges[vr.range] = vr.values || [];
   });
 
@@ -142,6 +141,8 @@ function render(data){
   const budgetRaw = ranges['Budget!F1:AB2'] || [];
   const catRaw = ranges['Budget!O1:P10'] || [];
   const tradingRaw = ranges['Trading!A1:I15'] || [];
+  const weightRaw = ranges['wight!A1:D30'] || [];
+  const metricsRaw = ranges['Metrics!A1:B13'] || [];
 
   const tasks = rowsToObjects(tasksRaw).filter(t => t['Done'] !== 'TRUE' && t['Name of the task']);
 
@@ -156,6 +157,17 @@ function render(data){
   const cats = (catRaw || []).filter(r => r[0] && !['Category Breakdown (Current Billing Cycle)','Cycle start','Category'].includes(r[0]));
 
   const trades = rowsToObjects(tradingRaw);
+
+  const weights = rowsToObjects(weightRaw).filter(w => w['Date']);
+  const latestWeight = weights[weights.length - 1];
+  const prevWeight = weights[weights.length - 2];
+  const weightDelta = latestWeight && prevWeight
+    ? (parseFloat(latestWeight['Weight']) - parseFloat(prevWeight['Weight']))
+    : null;
+
+  const metricsRows = (metricsRaw || []).filter(r => r[0] && r[1] !== undefined && r[1] !== '');
+  const metrics = {};
+  metricsRows.forEach(r => { metrics[r[0]] = r[1]; });
 
   let html = '';
 
@@ -210,6 +222,48 @@ function render(data){
           <span>${t['Symbol'] || ''}</span>
           <span>${fmt(t['Avg Fill Price'])}</span>
         </div>`).join('')}
+    </div>
+  </section>`;
+
+  // TRADING PERFORMANCE
+  const netPnlVal = parseFloat(metrics['Net PnL']) || 0;
+  html += `<section>
+    <div class="section-label">Trading Performance</div>
+    <div class="card">
+      <div class="pnl-row">
+        <div>
+          <div class="big-number ${netPnlVal >= 0 ? 'pos' : 'neg'}" style="color:${netPnlVal >= 0 ? 'var(--green)' : 'var(--red)'}">${metrics['Net PnL'] || '0'}</div>
+          <div class="big-label">net P&L</div>
+        </div>
+        <div class="budget-sub">
+          <div class="big-number">${metrics['Win rate'] || '—'}</div>
+          <div class="big-label">win rate</div>
+        </div>
+      </div>
+      <div class="cat-row"><span class="cat-name">Total trades</span><span class="cat-amt">${metrics['Total trades'] || '0'}</span></div>
+      <div class="cat-row"><span class="cat-name">Wins / Losses</span><span class="cat-amt">${metrics['Wins'] || '0'} / ${metrics['Losses'] || '0'}</span></div>
+      <div class="cat-row"><span class="cat-name">Avg win / loss</span><span class="cat-amt">${metrics['Avg win'] || '0'} / ${metrics['Avg loss'] || '0'}</span></div>
+      <div class="cat-row"><span class="cat-name">Profit factor</span><span class="cat-amt">${metrics['Profit factor'] || '0'}</span></div>
+    </div>
+  </section>`;
+
+  // WEIGHT
+  html += `<section>
+    <div class="section-label">Weight</div>
+    <div class="card">
+      ${!latestWeight ? '<div class="empty">No entries logged.</div>' : `
+      <div class="budget-row">
+        <div>
+          <div class="big-number">${latestWeight['Weight']}</div>
+          <div class="big-label">${weightDelta !== null ? (weightDelta > 0 ? '+' : '') + weightDelta.toFixed(1) + ' vs prev' : latestWeight['Date']}</div>
+        </div>
+        <div class="budget-sub">
+          <div class="big-number">${latestWeight['BMI'] || '—'}</div>
+          <div class="big-label">BMI · ${latestWeight['Body Fat Percentage'] || latestWeight['BMI'] ? '' : ''}body fat ${latestWeight['Body Fat Percentage'] || '—'}</div>
+        </div>
+      </div>
+      ${weights.slice(-7).reverse().map(w => `<div class="cat-row"><span class="cat-name">${w['Date']}</span><span class="cat-amt">${w['Weight']}</span></div>`).join('')}
+      `}
     </div>
   </section>`;
 
