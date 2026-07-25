@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Life System">
+<meta name="theme-color" content="#0A0E0C">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
 <title>Life System</title>
 <style>
   :root{
@@ -271,6 +275,10 @@ function render(data){
 }
 
 load();
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') load();
+});
 </script>
 </body>
 </html>
